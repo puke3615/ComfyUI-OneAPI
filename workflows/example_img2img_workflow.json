@@ -99,7 +99,7 @@
     },
     "class_type": "LoadImage",
     "_meta": {
-      "title": "Load Image,$image.image"
+      "title": "Load Image,$image"
     }
   },
   "11": {

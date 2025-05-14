@@ -139,7 +139,7 @@ async def _process_param_marker(node_data, var_spec, params):
     param_value = params[var_name]
     
     # Special handling for LoadImage node's image field
-    if node_data.get('class_type') == 'LoadImage' and input_field == 'image':
+    if node_data.get('class_type') == 'LoadImage':
         await _handle_load_image(node_data, param_value)
     else:
         # Regular parameter setting
