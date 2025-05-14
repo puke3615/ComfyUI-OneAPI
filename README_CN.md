@@ -28,9 +28,7 @@ POST /oneapi/v1/execute
     "workflow": {工作流JSON},
     "params": {
         "参数名": "参数值"
-    },
-    "wait_for_result": true,
-    "timeout": 300
+    }
 }
 ```
 
@@ -43,7 +41,7 @@ POST /oneapi/v1/execute
 
 例如：
 
-- 标记为 `$input_image` 的LoadImage节点，将使用params中的input_image参数作为图片文件名
+- 标记为 `$input_image` 的LoadImage节点，将使用params中的input_image参数作为图片参数
 - 标记为 `$prompt.text` 的CLIPTextEncode节点，将使用params中的prompt参数替换text字段
 
 ## 示例
@@ -59,8 +57,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
     "workflow": '"$(cat workflows/example_workflow.json)"',
     "params": {
         "prompt": "a cute dog with a red hat"
-    },
-    "wait_for_result": true
+    }
   }'
 ```
 
@@ -75,8 +72,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
     "params": {
         "prompt": "a cute dog with a red hat",
         "image": "https://example.com/input.jpg"
-    },
-    "wait_for_result": true
+    }
   }'
 ```
 

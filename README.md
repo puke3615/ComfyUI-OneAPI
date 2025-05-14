@@ -28,9 +28,7 @@ Request Body:
     "workflow": {Workflow JSON},
     "params": {
         "paramName": "paramValue"
-    },
-    "wait_for_result": true,
-    "timeout": 300
+    }
 }
 ```
 
@@ -43,7 +41,7 @@ To use dynamic parameters in your workflow, you need to use special markers in t
 
 Examples:
 
-- A LoadImage node marked with `$input_image` will use the input_image parameter from params as the image filename
+- A LoadImage node marked with `$input_image` will use the input_image parameter from params as the image param
 - A CLIPTextEncode node marked with `$prompt.text` will replace the text field with the prompt parameter from params
 
 ## Examples
@@ -59,8 +57,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
     "workflow": '"$(cat workflows/example_workflow.json)"',
     "params": {
         "prompt": "a cute dog with a red hat"
-    },
-    "wait_for_result": true
+    }
   }'
 ```
 
@@ -75,8 +72,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
     "params": {
         "prompt": "a cute dog with a red hat",
         "image": "https://example.com/input.jpg"
-    },
-    "wait_for_result": true
+    }
   }'
 ```
 

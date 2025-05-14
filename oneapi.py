@@ -37,7 +37,7 @@ async def execute_workflow(request):
         workflow = data.get('workflow')
         params = data.get('params', {})
         wait_for_result = data.get('wait_for_result', True)
-        timeout = data.get('timeout', 300)
+        timeout = data.get('timeout', None)
         
         if not workflow:
             return web.json_response({"error": "Workflow data is missing"}, status=400)
@@ -320,7 +320,7 @@ async def _get_base_url(request):
     
     return base_url
 
-async def _wait_for_results(prompt_id, timeout=300, request=None):
+async def _wait_for_results(prompt_id, timeout=None, request=None):
     """Wait for workflow execution results, get history using HTTP API"""
     start_time = time.time()
     result = {
@@ -334,7 +334,7 @@ async def _wait_for_results(prompt_id, timeout=300, request=None):
     
     while True:
         # Check timeout
-        if timeout > 0 and (time.time() - start_time) > timeout:
+        if timeout is not None and timeout > 0 and (time.time() - start_time) > timeout:
             result["status"] = "timeout"
             return result
             
