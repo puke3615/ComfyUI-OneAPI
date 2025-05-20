@@ -27,7 +27,19 @@ async def execute_workflow(request):
     - timeout: Timeout in seconds (default 300)
     
     Returns:
-    - Workflow execution results
+    - Return values:
+        - status: Status (queued, processing, completed, timeout)
+        - prompt_id: Prompt ID
+        - images: List of image URLs [string, ...]
+        - images_by_var: Mapped image URLs by variable name {var_name: [string, ...], ...}
+    
+    Node title markers:
+    - Input: Use "$param.field" in node title to map parameter values
+    - Output: Use "$output" or "$output.name" in SaveImage node title to specify outputs
+      - "$output.name" - Marks a SaveImage node with a custom output name (added to "images_by_var[name]")
+      - If no explicit output marker is set, the node_id is used as the variable name
+      - Only SaveImage nodes are considered for output
+      - Both images and images_by_var fields are always included in the response
     """
     try:
         # Get request data
@@ -45,6 +57,9 @@ async def execute_workflow(request):
         # Process workflow parameters
         if params:
             workflow = await _apply_params_to_workflow(workflow, params)
+        
+        # Extract and save output node information
+        output_id_2_var = await _extract_output_nodes(workflow)
         
         # Generate client ID
         client_id = str(uuid.uuid4())
@@ -68,7 +83,7 @@ async def execute_workflow(request):
             return web.json_response(result)
         
         # Poll for results
-        result = await _wait_for_results(prompt_id, timeout, request)
+        result = await _wait_for_results(prompt_id, timeout, request, output_id_2_var)
         return web.json_response(result)
         
     except Exception as e:
@@ -114,6 +129,52 @@ async def _process_node_params(node_data, params):
             
         # Process parameter marker
         await _process_param_marker(node_data, part[1:], params)
+
+async def _extract_output_nodes(workflow):
+    """
+    Extract SaveImage nodes and their output variable names from workflow
+    
+    Args:
+        workflow: Workflow JSON object
+        
+    Returns:
+        Dictionary mapping node_id to output variable name
+    """
+    output_id_2_var = {}
+    
+    for node_id, node_data in workflow.items():
+        # Skip nodes that don't meet criteria
+        if not _is_valid_node(node_data):
+            continue
+        
+        # Only process SaveImage nodes
+        if node_data.get('class_type') != 'SaveImage':
+            continue
+            
+        # Get node title
+        title = node_data["_meta"]["title"]
+        
+        # Check for $output marker in the title
+        output_var = None
+        parts = title.split(',')
+        for part in parts:
+            part = part.strip()
+            if part.startswith('$output'):
+                # Parse output marker
+                if '.' in part:
+                    # Format: $output.name - Specify output name
+                    output_var = part.split('.', 1)[1]
+                    if not output_var:
+                        raise Exception(f"Invalid output marker format (empty name): {part}")
+                else:
+                    # Simple $output without variable name is not valid
+                    raise Exception(f"Invalid output marker format (missing name): {part}. Use $output.name format.")
+        
+        # For SaveImage nodes, always register in output_id_2_var
+        # If no explicit marker, use node_id as the variable name
+        output_id_2_var[node_id] = output_var if output_var else str(node_id)
+    
+    return output_id_2_var
 
 async def _process_param_marker(node_data, var_spec, params):
     """
@@ -322,13 +383,14 @@ async def _get_base_url(request):
     
     return base_url
 
-async def _wait_for_results(prompt_id, timeout=None, request=None):
+async def _wait_for_results(prompt_id, timeout=None, request=None, output_id_2_var=None):
     """Wait for workflow execution results, get history using HTTP API"""
     start_time = time.time()
     result = {
         "status": "processing",
         "prompt_id": prompt_id,
-        "images": []
+        "images": [],
+        "images_by_var": {}
     }
     
     # Get base URL for image URLs
@@ -365,13 +427,14 @@ async def _wait_for_results(prompt_id, timeout=None, request=None):
                     if "outputs" in prompt_history:
                         result["status"] = "completed"
                         
-                        # Store original outputs
-                        if 'outputs' in result:
-                            del result['outputs']  # Remove outputs field
+                        # Store all SaveImage node outputs
+                        output_id_2_images = {}
                         
-                        # Process outputs, especially focusing on SaveImage nodes
+                        # Process outputs, focusing on nodes with images
                         for node_id, node_output in prompt_history["outputs"].items():
                             if "images" in node_output:
+                                # Store image URLs for this node
+                                node_images = []
                                 for img_data in node_output["images"]:
                                     filename = img_data.get("filename")
                                     subfolder = img_data.get("subfolder", "")
@@ -384,8 +447,25 @@ async def _wait_for_results(prompt_id, timeout=None, request=None):
                                     if img_type:
                                         img_url += f"&type={img_type}"
                                     
-                                    # Simplified: directly add URL string to results
-                                    result["images"].append(img_url)
+                                    node_images.append(img_url)
+                                
+                                output_id_2_images[node_id] = node_images
+                        
+                        # Process according to output mapping
+                        if output_id_2_var and output_id_2_images:
+                            # First pass: handle nodes with explicit mapping
+                            for node_id, output_var in output_id_2_var.items():
+                                if node_id in output_id_2_images:
+                                    # Add to images_by_var using the variable name
+                                    result["images_by_var"][output_var] = output_id_2_images[node_id]
+                            
+                            # For backward compatibility: add all output images to the images array as well
+                            for images in output_id_2_images.values():
+                                result["images"].extend(images)
+                        else:
+                            # No mapping or no image outputs, fallback to including all images in the images array
+                            for node_images in output_id_2_images.values():
+                                result["images"].extend(node_images)
                         
                         # Return complete results
                         return result

@@ -1,54 +1,119 @@
-# ComfyUI-OneAPI
+# ComfyUI-OneAPI ✨
 
-ComfyUI-OneAPI is a plugin that provides simple REST API interfaces for ComfyUI, allowing you to execute ComfyUI workflows through a single API request.
+ComfyUI-OneAPI is a plugin that provides simple REST API interfaces for ComfyUI, allowing you to execute complex ComfyUI workflows through a single API request.
 
 [中文文档](README_CN.md)
 
-## Features
+## ⚡️ Quick Start
 
-- **Simple Interface**: Execute complex ComfyUI workflows through a single API endpoint
-- **Parameter Mapping**: Support for dynamically replacing parameters in workflows
-- **Asynchronous Execution**: Support for both synchronous and asynchronous execution modes
-- **No WebSocket Dependency**: Uses HTTP polling to get results, no need to handle WebSocket connections
+### 🚀 Execute Workflow with Just One Request
 
-## Installation
+```bash
+curl -X POST "http://localhost:8188/oneapi/v1/execute" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workflow": {...}  # Replace with your workflow JSON
+  }'
+```
+
+### 📝 Simplest Request Format
+
+```json
+{
+  "workflow": {...}  // API version of workflow JSON
+}
+```
+
+### 📤 Common Response Format
+
+```json
+{
+  "status": "completed",
+  "images": ["http://server/image1.png", "http://server/image2.png"]
+}
+```
+
+## 🔥 Advanced Usage
+
+### 1️⃣ Dynamic Parameter Replacement - No More Workflow Edits 🔄
+
+Add markers in node titles to easily replace parameters:
+
+```json
+// Request
+{
+  "workflow": {...},
+  "params": {
+    "prompt": "cute cat",
+    "input_image": "https://example.com/image.jpg"
+  }
+}
+```
+
+**✨ How to Mark Nodes:**
+- 📝 Text Prompt: Add `$prompt.text` to CLIPTextEncode node title
+- 🖼️ Input Image: Add `$input_image` to LoadImage node title
+
+### 2️⃣ Distinguish Multiple Outputs - Handle Complex Workflows 🧩
+
+When your workflow has multiple SaveImage nodes, easily distinguish different outputs:
+
+```json
+// Response
+{
+  "status": "completed",
+  "images": ["http://server/image1.png", "http://server/image2.png"],
+  "images_by_var": {
+    "background": ["http://server/image1.png"],
+    "character": ["http://server/image2.png"]
+  }
+}
+```
+
+**✨ How to Mark Output Nodes:**
+- 💾 Add `$output.background` or `$output.character` to SaveImage node titles
+
+## 📋 Advanced Features
+
+### 📦 Installation
 
 1. Download or clone this repository to the `custom_nodes` directory of ComfyUI
 2. Restart ComfyUI
 
-## API Usage
-
-### Execute Workflow
+### 🔌 API Parameters
 
 ```
 POST /oneapi/v1/execute
 
 Request Body:
 {
-    "workflow": {Workflow JSON},
-    "params": {
-        "paramName": "paramValue"
-    }
+    "workflow": {...},               // API version of workflow JSON
+    "params": {...},                 // Optional: Parameter mapping
+    "wait_for_result": true/false,   // Optional: Wait for results (default true)
+    "timeout": 300                   // Optional: Timeout in seconds
 }
 ```
 
-## Workflow Parameter Mapping
+### 🏷️ Node Title Marker Rules
 
-To use dynamic parameters in your workflow, you need to use special markers in the node titles:
+#### ⬇️ Input Parameter Markers
 
-1. LoadImage node: Use `$image_param` format
-2. Other nodes: Use `$param.field_name` format
+1. 🖼️ LoadImage node: Use `$image_param` format
+2. 🔄 Other nodes: Use `$param.field_name` format
 
 Examples:
+- `$input_image` - LoadImage node uses params.input_image as the image
+- `$prompt.text` - Replaces text field with params.prompt
 
-- A LoadImage node marked with `$input_image` will use the input_image parameter from params as the image param
-- A CLIPTextEncode node marked with `$prompt.text` will replace the text field with the prompt parameter from params
+#### ⬆️ Output Markers
 
-## Examples
+Add markers to SaveImage node titles:
+- Format: `$output.name` (e.g., `$output.background`)
+- Without markers, node ID is used as the variable name
 
-### curl Examples
+## 🔍 Examples
 
-#### Text-to-Image Example
+### 📝 Text-to-Image Example
 
 ```bash
 curl -X POST "http://localhost:8188/oneapi/v1/execute" \
@@ -61,10 +126,9 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
   }'
 ```
 
-#### Image-to-Image Example
+### 🖼️ Image-to-Image Example
 
 ```bash
-# Execute image-to-image workflow
 curl -X POST "http://localhost:8188/oneapi/v1/execute" \
   -H "Content-Type: application/json" \
   -d '{
@@ -76,8 +140,8 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
   }'
 ```
 
-## Notes
+## ⚠️ Notes
 
-- This plugin is designed to simplify API calls, and does not provide WebSocket real-time progress information
-- Long-running workflows may cause request timeouts, consider setting appropriate timeout values
-- Parameter mapping in workflows depends on special markers in node titles 
+- 🔄 This plugin uses HTTP polling to get results, does not provide WebSocket real-time progress
+- ⏱️ Long-running workflows may cause request timeouts, consider setting appropriate timeout values
+- 🏷️ Parameter mapping and output marking depend on special markers in node titles 
