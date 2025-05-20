@@ -50,10 +50,12 @@ async def execute_workflow(request):
         client_id = str(uuid.uuid4())
         
         # Submit workflow to ComfyUI queue
-        prompt_id = await _queue_prompt(workflow, client_id)
-        
-        if not prompt_id:
-            return web.json_response({"error": "Failed to submit workflow"}, status=500)
+        try:
+            prompt_id = await _queue_prompt(workflow, client_id)
+        except Exception as e:
+            error_message = f"Failed to submit workflow: [{type(e)}] {str(e)}"
+            print(error_message)
+            return web.json_response({"error": error_message}, status=500)
         
         result = {
             "status": "queued",
@@ -267,29 +269,29 @@ async def _upload_image(image_path) -> str:
 
 async def _queue_prompt(workflow, client_id):
     """Submit workflow to queue using HTTP API"""
-    try:
-        prompt_data = {
-            "prompt": workflow,
-            "client_id": client_id
-        }
-        
-        json_data = json.dumps(prompt_data)
-        
-        # Use aiohttp to send request
-        async with aiohttp.ClientSession() as session:
-            async with session.post("http://127.0.0.1:8188/prompt", 
-                                    data=json_data,
-                                    headers={"Content-Type": "application/json"}) as response:
-                if response.status != 200:
-                    print(f"Failed to submit workflow: {response.status}")
-                    return None
-                
-                result = await response.json()
-                # Return prompt_id
-                return result.get("prompt_id")
-    except Exception as e:
-        print(f"Error submitting workflow: {str(e)}")
-        return None
+    prompt_data = {
+        "prompt": workflow,
+        "client_id": client_id
+    }
+    
+    json_data = json.dumps(prompt_data)
+    
+    # Use aiohttp to send request
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+                "http://127.0.0.1:8188/prompt", 
+                data=json_data,
+                headers={"Content-Type": "application/json"}
+            ) as response:
+            if response.status != 200:
+                response_text = await response.text()
+                raise Exception(f"Failed to submit workflow: [{response.status}] {response_text}")
+            
+            result = await response.json()
+            prompt_id = result.get("prompt_id")
+            if not prompt_id:
+                raise Exception(f"Failed to get prompt_id: {result}")
+            return prompt_id
 
 async def _get_base_url(request):
     """
