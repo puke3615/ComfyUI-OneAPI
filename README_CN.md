@@ -12,7 +12,7 @@ ComfyUI-OneAPI 是一个为 ComfyUI 提供简单REST API接口的插件，只需
 curl -X POST "http://localhost:8188/oneapi/v1/execute" \
   -H "Content-Type: application/json" \
   -d '{
-    "workflow": {...}  # 替换为您的工作流JSON
+    "workflow": {...}  # 支持JSON对象、本地文件名或URL
   }'
 ```
 
@@ -87,7 +87,7 @@ POST /oneapi/v1/execute
 
 请求体:
 {
-    "workflow": {...},               // 工作流的API版JSON
+    "workflow": {...},               // 支持JSON对象、本地文件名或URL
     "params": {...},                 // 可选：参数映射
     "wait_for_result": true/false,   // 可选：是否等待结果（默认true）
     "timeout": 300                   // 可选：超时时间（秒）
@@ -119,7 +119,7 @@ POST /oneapi/v1/execute
 curl -X POST "http://localhost:8188/oneapi/v1/execute" \
   -H "Content-Type: application/json" \
   -d '{
-    "workflow": '"$(cat workflows/example_workflow.json)"',
+    "workflow": "$(cat workflows/example_workflow.json)",  # 支持JSON对象、本地文件名或URL
     "params": {
         "prompt": "a cute dog with a red hat"
     }
@@ -132,7 +132,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 curl -X POST "http://localhost:8188/oneapi/v1/execute" \
   -H "Content-Type: application/json" \
   -d '{
-    "workflow": '"$(cat workflows/example_img2img_workflow.json)"',
+    "workflow": "$(cat workflows/example_img2img_workflow.json)",  # 支持JSON对象、本地文件名或URL
     "params": {
         "prompt": "a cute dog with a red hat",
         "image": "https://example.com/input.jpg"
@@ -145,3 +145,29 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 - 🔄 此插件使用HTTP轮询获取结果，不提供WebSocket实时进度
 - ⏱️ 长时间运行的工作流可能导致超时，请设置合适的timeout值
 - 🏷️ 参数映射和输出标记依赖于节点标题中的特殊标记 
+
+## /oneapi/v1/execute 接口说明
+
+### workflow 参数支持三种形式
+
+- 1. 直接传递 workflow 的 JSON 对象（原有逻辑）。
+- 2. 传递本地 workflow 文件名（如 `1.json`），会自动从 `user/default/workflows/1.json` 读取。
+- 3. 传递 workflow 的 URL（如 `http://xxx/1.json`），会自动下载并解析。
+
+区分方式：
+- 如果 workflow 是 dict，则直接用。
+- 如果 workflow 是字符串且以 `http://` 或 `https://` 开头，则当作 URL 下载。
+- 否则当作本地文件名，从 `user/default/workflows` 目录加载。
+
+**示例：**
+```json
+// 1. 直接传 JSON
+{"workflow": {"node1": {...}, ...}}
+
+// 2. 传本地文件名
+// 1.json 对应的是 <ComfyUI根目录>/user/default/workflows/1.json
+{"workflow": "1.json"}
+
+// 3. 传 URL
+{"workflow": "https://example.com/1.json"}
+``` 

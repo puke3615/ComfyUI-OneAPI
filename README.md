@@ -12,7 +12,7 @@ ComfyUI-OneAPI is a plugin that provides simple REST API interfaces for ComfyUI,
 curl -X POST "http://localhost:8188/oneapi/v1/execute" \
   -H "Content-Type: application/json" \
   -d '{
-    "workflow": {...}  # Replace with your workflow JSON
+    "workflow": {...}  # Supports JSON object, local filename, or URL
   }'
 ```
 
@@ -20,7 +20,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 
 ```json
 {
-  "workflow": {...}  // API version of workflow JSON
+  "workflow": {...}  # Supports JSON object, local filename, or URL
 }
 ```
 
@@ -87,7 +87,7 @@ POST /oneapi/v1/execute
 
 Request Body:
 {
-    "workflow": {...},               // API version of workflow JSON
+    "workflow": {...},               // Supports JSON object, local filename, or URL
     "params": {...},                 // Optional: Parameter mapping
     "wait_for_result": true/false,   // Optional: Wait for results (default true)
     "timeout": 300                   // Optional: Timeout in seconds
@@ -119,7 +119,7 @@ Add markers to SaveImage node titles:
 curl -X POST "http://localhost:8188/oneapi/v1/execute" \
   -H "Content-Type: application/json" \
   -d '{
-    "workflow": '"$(cat workflows/example_workflow.json)"',
+    "workflow": "$(cat workflows/example_workflow.json)",  # Supports JSON object, local filename, or URL
     "params": {
         "prompt": "a cute dog with a red hat"
     }
@@ -132,7 +132,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 curl -X POST "http://localhost:8188/oneapi/v1/execute" \
   -H "Content-Type: application/json" \
   -d '{
-    "workflow": '"$(cat workflows/example_img2img_workflow.json)"',
+    "workflow": "$(cat workflows/example_img2img_workflow.json)",  # Supports JSON object, local filename, or URL
     "params": {
         "prompt": "a cute dog with a red hat",
         "image": "https://example.com/input.jpg"
@@ -145,3 +145,29 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 - 🔄 This plugin uses HTTP polling to get results, does not provide WebSocket real-time progress
 - ⏱️ Long-running workflows may cause request timeouts, consider setting appropriate timeout values
 - 🏷️ Parameter mapping and output marking depend on special markers in node titles 
+
+## /oneapi/v1/execute API - workflow parameter supports three forms
+
+### Supported forms for the workflow parameter
+
+- 1. Pass workflow as a JSON object (original logic).
+- 2. Pass a local workflow filename (e.g. `1.json`), which will be loaded from `user/default/workflows/1.json`.
+- 3. Pass a workflow URL (e.g. `http://xxx/1.json`), which will be downloaded and parsed automatically.
+
+How to distinguish:
+- If workflow is a dict, use it directly.
+- If workflow is a string starting with `http://` or `https://`, treat as URL and download.
+- Otherwise, treat as a local filename and load from `user/default/workflows` directory.
+
+**Examples:**
+```json
+// 1. Pass JSON directly
+{"workflow": {"node1": {...}, ...}}
+
+// 2. Pass local filename
+// 1.json corresponds to <ComfyUI root>/user/default/workflows/1.json
+{"workflow": "1.json"}
+
+// 3. Pass URL
+{"workflow": "https://example.com/1.json"}
+``` 

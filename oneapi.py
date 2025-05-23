@@ -15,13 +15,18 @@ import execution
 # Get routes
 routes = PromptServer.instance.routes
 
+# Get workflow paths
+path_custom_nodes = os.path.dirname(os.path.dirname(__file__))
+path_comfyui_root = os.path.dirname(path_custom_nodes)
+path_workflows = os.path.join(path_comfyui_root, 'user/default/workflows')
+
 @routes.post('/oneapi/v1/execute')
 async def execute_workflow(request):
     """
     Execute workflow API
     
     Parameters:
-    - workflow: Workflow JSON
+    - workflow: Workflow JSON, filename (under user/default/workflows/), or URL
     - params: Parameter mapping dictionary
     - wait_for_result: Whether to wait for results (default True)
     - timeout: Timeout in seconds (default 300)
@@ -50,6 +55,19 @@ async def execute_workflow(request):
         params = data.get('params', {})
         wait_for_result = data.get('wait_for_result', True)
         timeout = data.get('timeout', None)
+
+        # Support workflow as local path or URL
+        if isinstance(workflow, dict):
+            pass  # Use directly
+        elif isinstance(workflow, str):
+            if workflow.startswith('http://') or workflow.startswith('https://'):
+                # URL, download
+                workflow = await _load_workflow_from_url(workflow)
+            else:
+                # Local filename
+                workflow = _load_workflow_from_local(workflow)
+        else:
+            return web.json_response({"error": "Invalid workflow parameter"}, status=400)
         
         if not workflow:
             return web.json_response({"error": "Workflow data is missing"}, status=400)
@@ -475,5 +493,33 @@ async def _wait_for_results(prompt_id, timeout=None, request=None, output_id_2_v
             
         # Wait before checking again
         await asyncio.sleep(1.0)
+
+# New: Load workflow from local file
+
+def _load_workflow_from_local(filename):
+    """
+    Load workflow JSON from user/default/workflows directory
+    """
+    file_path = os.path.join(path_workflows, filename)
+    if not os.path.isfile(file_path):
+        raise Exception(f"Workflow file not found: {file_path}")
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+# New: Load workflow from URL
+
+async def _load_workflow_from_url(url):
+    """
+    Download workflow JSON from URL
+    """
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status != 200:
+                raise Exception(f"Failed to download workflow: HTTP {response.status}")
+            text = await response.text()
+            try:
+                return json.loads(text)
+            except Exception as e:
+                raise Exception(f"Invalid workflow JSON from url: {e}")
 
 print("ComfyUI-OneAPI routes registered") 
