@@ -18,7 +18,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 
 ### 📝 Simplest Request Format
 
-```json
+```
 {
   "workflow": {...}  # Supports JSON object, local filename, or URL
 }
@@ -39,7 +39,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 
 Add markers in node titles to easily replace parameters:
 
-```json
+```
 // Request
 {
   "workflow": {...},
@@ -58,7 +58,7 @@ Add markers in node titles to easily replace parameters:
 
 When your workflow has multiple SaveImage nodes, easily distinguish different outputs:
 
-```json
+```
 // Response
 {
   "status": "completed",
@@ -160,7 +160,7 @@ How to distinguish:
 - Otherwise, treat as a local filename and load from `user/default/workflows` directory.
 
 **Examples:**
-```json
+```
 // 1. Pass JSON directly
 {"workflow": {"node1": {...}, ...}}
 
