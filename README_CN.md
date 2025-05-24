@@ -18,7 +18,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 
 ### 📝 最简单的请求格式
 
-```json
+```
 {
   "workflow": {...}  // 工作流的API版JSON
 }
@@ -39,7 +39,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 
 在节点标题中添加标记，轻松替换参数：
 
-```json
+```
 // 请求
 {
   "workflow": {...},
@@ -58,7 +58,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 
 当工作流有多个SaveImage节点时，轻松区分不同输出：
 
-```json
+```
 // 响应
 {
   "status": "completed",
@@ -160,7 +160,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 - 否则当作本地文件名，从 `user/default/workflows` 目录加载。
 
 **示例：**
-```json
+```
 // 1. 直接传 JSON
 {"workflow": {"node1": {...}, ...}}
 
