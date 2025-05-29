@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from aiohttp import web
 from server import PromptServer
 import execution
+from workflow_ui_2_api import convert_ui_to_api, adjust_workflow_format
 
 # Get routes
 routes = PromptServer.instance.routes
@@ -61,16 +62,21 @@ async def execute_workflow(request):
             pass  # Use directly
         elif isinstance(workflow, str):
             if workflow.startswith('http://') or workflow.startswith('https://'):
-                # URL, download
                 workflow = await _load_workflow_from_url(workflow)
             else:
-                # Local filename
                 workflow = _load_workflow_from_local(workflow)
         else:
             return web.json_response({"error": "Invalid workflow parameter"}, status=400)
         
         if not workflow:
             return web.json_response({"error": "Workflow data is missing"}, status=400)
+        
+        # Convert UI format to API format if needed
+        fmt = adjust_workflow_format(workflow)
+        if fmt == 'invalid':
+            return web.json_response({"error": "Invalid workflow format"}, status=400)
+        if fmt == 'ui':
+            workflow = await convert_ui_to_api(workflow)
         
         # Process workflow parameters
         if params:
