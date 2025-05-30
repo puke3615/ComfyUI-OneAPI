@@ -1,5 +1,6 @@
 import os
 import json
+import traceback
 import uuid
 import time
 import copy
@@ -21,6 +22,9 @@ path_custom_nodes = os.path.dirname(os.path.dirname(__file__))
 path_comfyui_root = os.path.dirname(path_custom_nodes)
 path_workflows = os.path.join(path_comfyui_root, 'user/default/workflows')
 
+# Output node types for workflow result extraction
+OUTPUT_NODE_TYPES = ["SaveImage", "SaveVideo", "VHS_VideoCombine"]
+
 @routes.post('/oneapi/v1/execute')
 async def execute_workflow(request):
     """
@@ -36,16 +40,18 @@ async def execute_workflow(request):
     - Return values:
         - status: Status (queued, processing, completed, timeout)
         - prompt_id: Prompt ID
-        - images: List of image URLs [string, ...]
-        - images_by_var: Mapped image URLs by variable name {var_name: [string, ...], ...}
+        - images: List of image URLs [string, ...], only present if there are image results
+        - images_by_var: Mapped image URLs by variable name {var_name: [string, ...], ...}, only present if there are image results
+        - videos: List of video URLs [string, ...], only present if there are video results
+        - videos_by_var: Mapped video URLs by variable name {var_name: [string, ...], ...}, only present if there are video results
     
     Node title markers:
     - Input: Use "$param.field" in node title to map parameter values
-    - Output: Use "$output" or "$output.name" in SaveImage node title to specify outputs
-      - "$output.name" - Marks a SaveImage node with a custom output name (added to "images_by_var[name]")
+    - Output: Use "$output" or "$output.name" in output node title (see OUTPUT_NODE_TYPES) to specify outputs
+      - "$output.name" - Marks an output node with a custom output name (added to "images_by_var[name]" or "videos_by_var[name]")
       - If no explicit output marker is set, the node_id is used as the variable name
-      - Only SaveImage nodes are considered for output
-      - Both images and images_by_var fields are always included in the response
+      - Only nodes in OUTPUT_NODE_TYPES are considered for output
+      - images/images_by_var/videos/videos_by_var fields are only included if there are corresponding results
     """
     try:
         # Get request data
@@ -111,7 +117,7 @@ async def execute_workflow(request):
         return web.json_response(result)
         
     except Exception as e:
-        print(f"Error executing workflow: {str(e)}")
+        print(f"Error executing workflow: {str(e)}, {traceback.format_exc()}")
         return web.json_response({"error": str(e)}, status=500)
 
 async def _apply_params_to_workflow(workflow, params):
@@ -156,13 +162,18 @@ async def _process_node_params(node_data, params):
 
 async def _extract_output_nodes(workflow):
     """
-    Extract SaveImage nodes and their output variable names from workflow
+    Extract output nodes and their output variable names from workflow
+    (output node types are defined in OUTPUT_NODE_TYPES)
     
     Args:
         workflow: Workflow JSON object
         
     Returns:
         Dictionary mapping node_id to output variable name
+    
+    Note:
+        Only nodes in OUTPUT_NODE_TYPES are considered as output nodes.
+        Output fields (images, videos, *_by_var) are only included in the response if there are corresponding results.
     """
     output_id_2_var = {}
     
@@ -171,8 +182,8 @@ async def _extract_output_nodes(workflow):
         if not _is_valid_node(node_data):
             continue
         
-        # Only process SaveImage nodes
-        if node_data.get('class_type') != 'SaveImage':
+        # Only process output nodes (see OUTPUT_NODE_TYPES)
+        if node_data.get('class_type') not in OUTPUT_NODE_TYPES:
             continue
             
         # Get node title
@@ -194,7 +205,7 @@ async def _extract_output_nodes(workflow):
                     # Simple $output without variable name is not valid
                     raise Exception(f"Invalid output marker format (missing name): {part}. Use $output.name format.")
         
-        # For SaveImage nodes, always register in output_id_2_var
+        # For output nodes, always register in output_id_2_var
         # If no explicit marker, use node_id as the variable name
         output_id_2_var[node_id] = output_var if output_var else str(node_id)
     
@@ -407,6 +418,108 @@ async def _get_base_url(request):
     
     return base_url
 
+# Helper: extract URLs for a specific media type from a node output
+def _extract_node_media_urls(node_output, base_url, media_key):
+    """
+    Extract URLs for a specific media type (e.g., 'images', 'gifs') from a node output.
+    Args:
+        node_output: Output dict for a node
+        base_url: Base URL for constructing file URLs
+        media_key: Key in node_output ('images' or 'gifs')
+    Returns:
+        List of URLs for the specified media type
+    """
+    urls = []
+    for media_data in node_output.get(media_key, []):
+        filename = media_data.get("filename")
+        subfolder = media_data.get("subfolder", "")
+        media_type = media_data.get("type", "output")
+        url = f"{base_url}/view?filename={filename}"
+        if subfolder:
+            url += f"&subfolder={subfolder}"
+        if media_type:
+            url += f"&type={media_type}"
+        urls.append(url)
+    return urls
+
+# Helper: collect all outputs of a given media type from all nodes
+def _collect_outputs_by_type(outputs, base_url, media_key):
+    """
+    Collect all outputs of a given media type from all nodes.
+    Args:
+        outputs: All outputs dict
+        base_url: Base URL for constructing file URLs
+        media_key: Key in node_output ('images' or 'gifs')
+    Returns:
+        Dict mapping node_id to list of URLs
+    """
+    result = {}
+    for node_id, node_output in outputs.items():
+        urls = _extract_node_media_urls(node_output, base_url, media_key)
+        if urls:
+            result[node_id] = urls
+    return result
+
+# Helper: map outputs by variable name
+def _map_outputs_by_var(output_id_2_var, output_id_2_media):
+    """
+    Map outputs by variable name using output_id_2_var mapping.
+    Args:
+        output_id_2_var: Dict mapping node_id to variable name
+        output_id_2_media: Dict mapping node_id to list of URLs
+    Returns:
+        Dict mapping variable name to list of URLs
+    """
+    result = {}
+    for node_id, var_name in output_id_2_var.items():
+        if node_id in output_id_2_media:
+            result[var_name] = output_id_2_media[node_id]
+    return result
+
+# Helper: flatten all lists in a dict into a single list
+def _extend_flat_list_from_dict(media_dict):
+    """
+    Flatten all lists in a dict into a single list.
+    Args:
+        media_dict: Dict of lists
+    Returns:
+        Flat list of all items
+    """
+    flat = []
+    for items in media_dict.values():
+        flat.extend(items)
+    return flat
+
+def _split_media_by_suffix(node_output, base_url):
+    """
+    Split all media entries in node_output into images/videos by file extension.
+    Args:
+        node_output: Output dict for a node
+        base_url: Base URL for constructing file URLs
+    Returns:
+        (images: list, videos: list) - lists of URLs
+    """
+    image_exts = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff'}
+    video_exts = {'.mp4', '.mov', '.avi', '.webm', '.gif'}
+    images = []
+    videos = []
+    for media_key in ("images", "gifs"):
+        for media_data in node_output.get(media_key, []):
+            filename = media_data.get("filename")
+            subfolder = media_data.get("subfolder", "")
+            media_type = media_data.get("type", "output")
+            url = f"{base_url}/view?filename={filename}"
+            if subfolder:
+                url += f"&subfolder={subfolder}"
+            if media_type:
+                url += f"&type={media_type}"
+            ext = os.path.splitext(filename)[1].lower()
+            if ext in image_exts:
+                images.append(url)
+            elif ext in video_exts:
+                videos.append(url)
+    return images, videos
+
 async def _wait_for_results(prompt_id, timeout=None, request=None, output_id_2_var=None):
     """Wait for workflow execution results, get history using HTTP API"""
     start_time = time.time()
@@ -414,94 +527,75 @@ async def _wait_for_results(prompt_id, timeout=None, request=None, output_id_2_v
         "status": "processing",
         "prompt_id": prompt_id,
         "images": [],
-        "images_by_var": {}
+        "images_by_var": {},
+        "videos": [],
+        "videos_by_var": {}
     }
-    
-    # Get base URL for image URLs
+
+    # Get base URL for image/video URLs
     base_url = await _get_base_url(request)
-    
+
     while True:
         # Check timeout
         if timeout is not None and timeout > 0 and (time.time() - start_time) > timeout:
             result["status"] = "timeout"
             return result
-            
+
         # Get history using HTTP API
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"http://127.0.0.1:8188/history") as response:
                     if response.status != 200:
-                        # API call failed, retry after waiting
                         await asyncio.sleep(1.0)
                         continue
-                    
-                    # Get entire history
                     history_data = await response.json()
-                    
-                    # Check if specified prompt_id is in history
                     if prompt_id not in history_data:
-                        # Workflow might not be completed yet, retry after waiting
                         await asyncio.sleep(1.0)
                         continue
-                    
-                    # Get history for specific prompt_id
                     prompt_history = history_data[prompt_id]
-                    
-                    # Check if completed
                     if "outputs" in prompt_history:
+                        result["outputs"] = prompt_history["outputs"]
                         result["status"] = "completed"
-                        
-                        # Store all SaveImage node outputs
+
+                        # Collect all image and video outputs by file extension
                         output_id_2_images = {}
-                        
-                        # Process outputs, focusing on nodes with images
+                        output_id_2_videos = {}
                         for node_id, node_output in prompt_history["outputs"].items():
-                            if "images" in node_output:
-                                # Store image URLs for this node
-                                node_images = []
-                                for img_data in node_output["images"]:
-                                    filename = img_data.get("filename")
-                                    subfolder = img_data.get("subfolder", "")
-                                    img_type = img_data.get("type", "output")
-                                    
-                                    # Build image URL
-                                    img_url = f"{base_url}/view?filename={filename}"
-                                    if subfolder:
-                                        img_url += f"&subfolder={subfolder}"
-                                    if img_type:
-                                        img_url += f"&type={img_type}"
-                                    
-                                    node_images.append(img_url)
-                                
-                                output_id_2_images[node_id] = node_images
-                        
-                        # Process according to output mapping
+                            images, videos = _split_media_by_suffix(node_output, base_url)
+                            if images:
+                                output_id_2_images[node_id] = images
+                            if videos:
+                                output_id_2_videos[node_id] = videos
+
+                        # Map by variable name if mapping is available
                         if output_id_2_var and output_id_2_images:
-                            # First pass: handle nodes with explicit mapping
-                            for node_id, output_var in output_id_2_var.items():
-                                if node_id in output_id_2_images:
-                                    # Add to images_by_var using the variable name
-                                    result["images_by_var"][output_var] = output_id_2_images[node_id]
-                            
-                            # For backward compatibility: add all output images to the images array as well
-                            for images in output_id_2_images.values():
-                                result["images"].extend(images)
-                        else:
-                            # No mapping or no image outputs, fallback to including all images in the images array
-                            for node_images in output_id_2_images.values():
-                                result["images"].extend(node_images)
-                        
-                        # Return complete results
+                            result["images_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_images)
+                            result["images"] = _extend_flat_list_from_dict(result["images_by_var"])
+                        elif output_id_2_images:
+                            result["images"] = _extend_flat_list_from_dict(output_id_2_images)
+
+                        if output_id_2_var and output_id_2_videos:
+                            result["videos_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_videos)
+                            result["videos"] = _extend_flat_list_from_dict(result["videos_by_var"])
+                        elif output_id_2_videos:
+                            result["videos"] = _extend_flat_list_from_dict(output_id_2_videos)
+
+                        # Remove empty fields for images/videos
+                        if not result["images"]:
+                            result.pop("images")
+                        if not result["images_by_var"]:
+                            result.pop("images_by_var")
+                        if "videos" in result and not result["videos"]:
+                            result.pop("videos")
+                        if "videos_by_var" in result and not result["videos_by_var"]:
+                            result.pop("videos_by_var")
+
                         return result
         except Exception as e:
             print(f"Error getting history: {str(e)}")
-            # Continue trying after error
-            
-        # Wait before checking again
         await asyncio.sleep(1.0)
 
 # New: Load workflow from local file
-
 def _load_workflow_from_local(filename):
     """
     Load workflow JSON from user/default/workflows directory
@@ -513,7 +607,6 @@ def _load_workflow_from_local(filename):
         return json.load(f)
 
 # New: Load workflow from URL
-
 async def _load_workflow_from_url(url):
     """
     Download workflow JSON from URL
