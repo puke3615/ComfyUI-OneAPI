@@ -17,6 +17,7 @@ def init_oneapi():
         print(f"ComfyUI-OneAPI failed to load: {str(e)}")
 
 # This function will be automatically called when ComfyUI loads the plugin
+WEB_DIRECTORY = "./web"
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 
