@@ -80,6 +80,39 @@ When your workflow has multiple SaveImage nodes, easily distinguish different ou
 1. Download or clone this repository to the `custom_nodes` directory of ComfyUI
 2. Restart ComfyUI
 
+### 🖥️ UI Features
+
+This plugin adds convenient UI features to ComfyUI's interface:
+
+#### 📝 Save Workflow as API
+
+**How to use:**
+1. Right-click on the canvas (empty area)
+2. Select "🚀 Save Workflow as API"
+3. Enter a workflow name in the dialog
+4. Choose whether to overwrite if the file exists
+5. Click "Save"
+
+The workflow will be saved to `user/default/api_workflows/` directory as a JSON file that can be used with the API.
+
+#### 🏷️ Set Node Input Parameters
+
+**How to use:**
+1. Select a single node in the workflow
+2. Right-click on the node
+3. Select "🚀 Set Node Input"
+4. Choose which field you want to parameterize from the list
+5. Enter a variable name for the parameter
+6. The node's title will be automatically updated with the parameter marker
+
+**Example:**
+- Select a CLIPTextEncode node
+- Choose "text" field
+- Enter "prompt" as variable name
+- Node title will be updated to include `$prompt.text`
+
+This feature makes it easy to mark nodes for parameter replacement without manually editing node titles.
+
 ### 🔌 API Parameters
 
 ```
@@ -151,7 +184,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 ### Supported forms for the workflow parameter
 
 - 1. Pass workflow as a JSON object (original logic).
-- 2. Pass a local workflow filename (e.g. `1.json`), which will be loaded from `user/default/workflows/1.json`.
+- 2. Pass a local workflow filename (e.g. `1.json`), which will be loaded from `user/default/api_workflows/1.json`.
 - 3. Pass a workflow URL (e.g. `http://xxx/1.json`), which will be downloaded and parsed automatically.
 
 How to distinguish:
@@ -165,7 +198,7 @@ How to distinguish:
 {"workflow": {"node1": {...}, ...}}
 
 // 2. Pass local filename
-// 1.json corresponds to <ComfyUI root>/user/default/workflows/1.json
+// 1.json corresponds to <ComfyUI root>/user/default/api_workflows/1.json
 {"workflow": "1.json"}
 
 // 3. Pass URL

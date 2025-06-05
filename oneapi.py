@@ -11,19 +11,55 @@ import mimetypes
 from urllib.parse import urlparse
 from aiohttp import web
 from server import PromptServer
+import folder_paths
 import execution
-from workflow_ui_2_api import convert_ui_to_api, adjust_workflow_format
+from workflow_format import adjust_workflow_format
+
+# Constants
+API_WORKFLOWS_DIR = 'api_workflows'
 
 # Get routes
-routes = PromptServer.instance.routes
+prompt_server = PromptServer.instance
+routes = prompt_server.routes
 
 # Get workflow paths
 path_custom_nodes = os.path.dirname(os.path.dirname(__file__))
 path_comfyui_root = os.path.dirname(path_custom_nodes)
 path_workflows = os.path.join(path_comfyui_root, 'user/default/workflows')
 
-# Output node types for workflow result extraction
-OUTPUT_NODE_TYPES = ["SaveImage", "SaveVideo", "VHS_VideoCombine"]
+@routes.post('/oneapi/v1/save-api-workflow')
+async def save_api_workflow(request):
+    """
+    Save API workflow to user's workflow directory.
+    """
+    data = await request.json()
+    name = data.get('name')
+    workflow = data.get('workflow')
+    overwrite = data.get('overwrite', False)
+    
+    if not name:
+        return web.json_response({"error": "Name is required"}, status=400)
+    if not workflow:
+        return web.json_response({"error": "Workflow is required"}, status=400)
+    
+    fmt = adjust_workflow_format(workflow)
+    if fmt == 'invalid':
+        return web.json_response({"error": "Invalid workflow format"}, status=400)
+    if fmt == 'ui':
+        return web.json_response({"error": "UI format workflow is not supported. Please convert to API format and try again."}, status=400)
+
+    name_with_json = name if name.endswith('.json') else f'{name}.json'
+    relative_path = f'{API_WORKFLOWS_DIR}/{name_with_json}'
+    save_path = prompt_server.user_manager.get_request_user_filepath(request, relative_path, create_dir=True)
+    if not save_path:
+        return web.json_response({"error": "Failed to get save path"}, status=500)
+    if os.path.exists(save_path) and not overwrite:
+        return web.json_response({"error": "File already exists. Use overwrite=true to overwrite."}, status=400)
+    
+    with open(save_path, 'w', encoding='utf-8') as f:
+        json.dump(workflow, f, indent=2, ensure_ascii=False)
+
+    return web.json_response({"message": "Workflow saved successfully", "filename": name_with_json})
 
 @routes.post('/oneapi/v1/execute')
 async def execute_workflow(request):
@@ -31,10 +67,11 @@ async def execute_workflow(request):
     Execute workflow API
     
     Parameters:
-    - workflow: Workflow JSON, filename (under user/default/workflows/), or URL
+    - workflow: Workflow JSON, filename (under user/default/api_workflows/), or URL
     - params: Parameter mapping dictionary
     - wait_for_result: Whether to wait for results (default True)
-    - timeout: Timeout in seconds (default 300)
+    - timeout: Timeout in seconds (default None)
+    - prompt_ext_params: Extra parameters for prompt request (optional)
     
     Returns:
     - Return values:
@@ -44,14 +81,16 @@ async def execute_workflow(request):
         - images_by_var: Mapped image URLs by variable name {var_name: [string, ...], ...}, only present if there are image results
         - videos: List of video URLs [string, ...], only present if there are video results
         - videos_by_var: Mapped video URLs by variable name {var_name: [string, ...], ...}, only present if there are video results
+        - texts: List of text outputs [string, ...], only present if there are text results
+        - texts_by_var: Mapped text outputs by variable name {var_name: [string, ...], ...}, only present if there are text results
     
     Node title markers:
     - Input: Use "$param.field" in node title to map parameter values
-    - Output: Use "$output" or "$output.name" in output node title (see OUTPUT_NODE_TYPES) to specify outputs
-      - "$output.name" - Marks an output node with a custom output name (added to "images_by_var[name]" or "videos_by_var[name]")
+    - Output: Use "$output.name" in output node title to specify outputs
+      - "$output.name" - Marks an output node with a custom output name (added to "images_by_var[name]" or "videos_by_var[name]" or "texts_by_var[name]")
       - If no explicit output marker is set, the node_id is used as the variable name
-      - Only nodes in OUTPUT_NODE_TYPES are considered for output
-      - images/images_by_var/videos/videos_by_var fields are only included if there are corresponding results
+      - Any node that produces outputs (images, videos, texts) will be included in results
+      - images/images_by_var/videos/videos_by_var/texts/texts_by_var fields are only included if there are corresponding results
     """
     try:
         # Get request data
@@ -62,6 +101,7 @@ async def execute_workflow(request):
         params = data.get('params', {})
         wait_for_result = data.get('wait_for_result', True)
         timeout = data.get('timeout', None)
+        prompt_ext_params = data.get('prompt_ext_params', {})
 
         # Support workflow as local path or URL
         if isinstance(workflow, dict):
@@ -70,7 +110,7 @@ async def execute_workflow(request):
             if workflow.startswith('http://') or workflow.startswith('https://'):
                 workflow = await _load_workflow_from_url(workflow)
             else:
-                workflow = _load_workflow_from_local(workflow)
+                workflow = _load_workflow_from_local(workflow, request)
         else:
             return web.json_response({"error": "Invalid workflow parameter"}, status=400)
         
@@ -82,7 +122,7 @@ async def execute_workflow(request):
         if fmt == 'invalid':
             return web.json_response({"error": "Invalid workflow format"}, status=400)
         if fmt == 'ui':
-            workflow = await convert_ui_to_api(workflow)
+            return web.json_response({"error": "UI format workflow is not supported. Please convert to API format and try again."}, status=400)
         
         # Process workflow parameters
         if params:
@@ -96,7 +136,7 @@ async def execute_workflow(request):
         
         # Submit workflow to ComfyUI queue
         try:
-            prompt_id = await _queue_prompt(workflow, client_id)
+            prompt_id = await _queue_prompt(workflow, client_id, prompt_ext_params)
         except Exception as e:
             error_message = f"Failed to submit workflow: [{type(e)}] {str(e)}"
             print(error_message)
@@ -163,27 +203,22 @@ async def _process_node_params(node_data, params):
 async def _extract_output_nodes(workflow):
     """
     Extract output nodes and their output variable names from workflow
-    (output node types are defined in OUTPUT_NODE_TYPES)
     
     Args:
         workflow: Workflow JSON object
         
     Returns:
-        Dictionary mapping node_id to output variable name
+        Dictionary mapping node_id to output variable name (only for nodes with explicit $output.name markers)
     
     Note:
-        Only nodes in OUTPUT_NODE_TYPES are considered as output nodes.
-        Output fields (images, videos, *_by_var) are only included in the response if there are corresponding results.
+        Any node that produces outputs will be included in results.
+        Output fields (images, videos, texts, *_by_var) are only included in the response if there are corresponding results.
     """
     output_id_2_var = {}
     
     for node_id, node_data in workflow.items():
         # Skip nodes that don't meet criteria
         if not _is_valid_node(node_data):
-            continue
-        
-        # Only process output nodes (see OUTPUT_NODE_TYPES)
-        if node_data.get('class_type') not in OUTPUT_NODE_TYPES:
             continue
             
         # Get node title
@@ -205,9 +240,9 @@ async def _extract_output_nodes(workflow):
                     # Simple $output without variable name is not valid
                     raise Exception(f"Invalid output marker format (missing name): {part}. Use $output.name format.")
         
-        # For output nodes, always register in output_id_2_var
-        # If no explicit marker, use node_id as the variable name
-        output_id_2_var[node_id] = output_var if output_var else str(node_id)
+        # Only register in output_id_2_var if there's an explicit output marker
+        if output_var:
+            output_id_2_var[node_id] = output_var
     
     return output_id_2_var
 
@@ -363,12 +398,16 @@ async def _upload_image(image_path) -> str:
             result = await response.json()
             return result.get('name', '')
 
-async def _queue_prompt(workflow, client_id):
+async def _queue_prompt(workflow, client_id, prompt_ext_params=None):
     """Submit workflow to queue using HTTP API"""
     prompt_data = {
         "prompt": workflow,
         "client_id": client_id
     }
+    
+    # Update prompt_data with all parameters from prompt_ext_params
+    if prompt_ext_params:
+        prompt_data.update(prompt_ext_params)
     
     json_data = json.dumps(prompt_data)
     
@@ -418,62 +457,21 @@ async def _get_base_url(request):
     
     return base_url
 
-# Helper: extract URLs for a specific media type from a node output
-def _extract_node_media_urls(node_output, base_url, media_key):
-    """
-    Extract URLs for a specific media type (e.g., 'images', 'gifs') from a node output.
-    Args:
-        node_output: Output dict for a node
-        base_url: Base URL for constructing file URLs
-        media_key: Key in node_output ('images' or 'gifs')
-    Returns:
-        List of URLs for the specified media type
-    """
-    urls = []
-    for media_data in node_output.get(media_key, []):
-        filename = media_data.get("filename")
-        subfolder = media_data.get("subfolder", "")
-        media_type = media_data.get("type", "output")
-        url = f"{base_url}/view?filename={filename}"
-        if subfolder:
-            url += f"&subfolder={subfolder}"
-        if media_type:
-            url += f"&type={media_type}"
-        urls.append(url)
-    return urls
-
-# Helper: collect all outputs of a given media type from all nodes
-def _collect_outputs_by_type(outputs, base_url, media_key):
-    """
-    Collect all outputs of a given media type from all nodes.
-    Args:
-        outputs: All outputs dict
-        base_url: Base URL for constructing file URLs
-        media_key: Key in node_output ('images' or 'gifs')
-    Returns:
-        Dict mapping node_id to list of URLs
-    """
-    result = {}
-    for node_id, node_output in outputs.items():
-        urls = _extract_node_media_urls(node_output, base_url, media_key)
-        if urls:
-            result[node_id] = urls
-    return result
-
 # Helper: map outputs by variable name
 def _map_outputs_by_var(output_id_2_var, output_id_2_media):
     """
     Map outputs by variable name using output_id_2_var mapping.
     Args:
-        output_id_2_var: Dict mapping node_id to variable name
-        output_id_2_media: Dict mapping node_id to list of URLs
+        output_id_2_var: Dict mapping node_id to variable name (for nodes with explicit markers)
+        output_id_2_media: Dict mapping node_id to list of URLs/data
     Returns:
-        Dict mapping variable name to list of URLs
+        Dict mapping variable name to list of URLs/data
     """
     result = {}
-    for node_id, var_name in output_id_2_var.items():
-        if node_id in output_id_2_media:
-            result[var_name] = output_id_2_media[node_id]
+    for node_id, media_data in output_id_2_media.items():
+        # Use explicit variable name if available, otherwise use node_id
+        var_name = output_id_2_var.get(node_id, str(node_id))
+        result[var_name] = media_data
     return result
 
 # Helper: flatten all lists in a dict into a single list
@@ -529,7 +527,9 @@ async def _wait_for_results(prompt_id, timeout=None, request=None, output_id_2_v
         "images": [],
         "images_by_var": {},
         "videos": [],
-        "videos_by_var": {}
+        "videos_by_var": {},
+        "texts": [],
+        "texts_by_var": {}
     }
 
     # Get base URL for image/video URLs
@@ -560,35 +560,50 @@ async def _wait_for_results(prompt_id, timeout=None, request=None, output_id_2_v
                         # Collect all image and video outputs by file extension
                         output_id_2_images = {}
                         output_id_2_videos = {}
+                        output_id_2_texts = {}
                         for node_id, node_output in prompt_history["outputs"].items():
                             images, videos = _split_media_by_suffix(node_output, base_url)
                             if images:
                                 output_id_2_images[node_id] = images
                             if videos:
                                 output_id_2_videos[node_id] = videos
+                            # Collect text outputs
+                            if "text" in node_output:
+                                # Handle text field as string or list
+                                texts = node_output["text"]
+                                if isinstance(texts, str):
+                                    texts = [texts]
+                                elif not isinstance(texts, list):
+                                    texts = [str(texts)]
+                                output_id_2_texts[node_id] = texts
 
                         # Map by variable name if mapping is available
-                        if output_id_2_var and output_id_2_images:
+                        if output_id_2_images:
                             result["images_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_images)
                             result["images"] = _extend_flat_list_from_dict(result["images_by_var"])
-                        elif output_id_2_images:
-                            result["images"] = _extend_flat_list_from_dict(output_id_2_images)
 
-                        if output_id_2_var and output_id_2_videos:
+                        if output_id_2_videos:
                             result["videos_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_videos)
                             result["videos"] = _extend_flat_list_from_dict(result["videos_by_var"])
-                        elif output_id_2_videos:
-                            result["videos"] = _extend_flat_list_from_dict(output_id_2_videos)
 
-                        # Remove empty fields for images/videos
-                        if not result["images"]:
-                            result.pop("images")
-                        if not result["images_by_var"]:
-                            result.pop("images_by_var")
-                        if "videos" in result and not result["videos"]:
-                            result.pop("videos")
-                        if "videos_by_var" in result and not result["videos_by_var"]:
-                            result.pop("videos_by_var")
+                        # Handle texts/texts_by_var
+                        if output_id_2_texts:
+                            result["texts_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_texts)
+                            result["texts"] = _extend_flat_list_from_dict(result["texts_by_var"])
+
+                        # Remove empty fields for images/videos/texts
+                        if not result.get("images"):
+                            result.pop("images", None)
+                        if not result.get("images_by_var"):
+                            result.pop("images_by_var", None)
+                        if not result.get("videos"):
+                            result.pop("videos", None)
+                        if not result.get("videos_by_var"):
+                            result.pop("videos_by_var", None)
+                        if not result.get("texts"):
+                            result.pop("texts", None)
+                        if not result.get("texts_by_var"):
+                            result.pop("texts_by_var", None)
 
                         return result
         except Exception as e:
@@ -596,14 +611,21 @@ async def _wait_for_results(prompt_id, timeout=None, request=None, output_id_2_v
         await asyncio.sleep(1.0)
 
 # New: Load workflow from local file
-def _load_workflow_from_local(filename):
+def _load_workflow_from_local(filename, request=None):
     """
-    Load workflow JSON from user/default/workflows directory
+    Load workflow JSON from user's workflow directory
     """
-    file_path = os.path.join(path_workflows, filename)
-    if not os.path.isfile(file_path):
-        raise Exception(f"Workflow file not found: {file_path}")
-    with open(file_path, 'r', encoding='utf-8') as f:
+    if not request or not prompt_server.user_manager:
+        raise Exception("User context is required to load workflow from user directory")
+    
+    name_with_json = filename if filename.endswith('.json') else f'{filename}.json'
+    relative_path = f'{API_WORKFLOWS_DIR}/{name_with_json}'
+    api_workflow_path = prompt_server.user_manager.get_request_user_filepath(request, relative_path, create_dir=False)
+    
+    if not api_workflow_path or not os.path.isfile(api_workflow_path):
+        raise Exception(f"Workflow file not found in user directory: {filename}")
+    
+    with open(api_workflow_path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 # New: Load workflow from URL

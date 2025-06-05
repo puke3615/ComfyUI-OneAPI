@@ -80,6 +80,39 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 1. 下载或克隆此仓库到ComfyUI的`custom_nodes`目录
 2. 重启ComfyUI
 
+### 🖥️ 界面功能
+
+此插件为 ComfyUI 界面添加了便捷的功能：
+
+#### 📝 保存工作流为API
+
+**使用方法：**
+1. 在画布空白处右键
+2. 选择"🚀 Save Workflow as API"
+3. 在对话框中输入工作流名称
+4. 选择是否覆盖已存在的文件
+5. 点击"保存"
+
+工作流将保存到 `user/default/api_workflows/` 目录下，生成可用于API调用的JSON文件。
+
+#### 🏷️ 设置节点输入参数
+
+**使用方法：**
+1. 选择工作流中的单个节点
+2. 右键点击节点
+3. 选择"🚀 Set Node Input"
+4. 从列表中选择要参数化的字段
+5. 输入参数的变量名
+6. 节点标题将自动更新参数标记
+
+**示例：**
+- 选择 CLIPTextEncode 节点
+- 选择"text"字段
+- 输入"prompt"作为变量名
+- 节点标题将更新为包含 `$prompt.text`
+
+此功能让您无需手动编辑节点标题，即可轻松标记节点以进行参数替换。
+
 ### 🔌 API参数详解
 
 ```
@@ -151,7 +184,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 ### workflow 参数支持三种形式
 
 - 1. 直接传递 workflow 的 JSON 对象（原有逻辑）。
-- 2. 传递本地 workflow 文件名（如 `1.json`），会自动从 `user/default/workflows/1.json` 读取。
+- 2. 传递本地 workflow 文件名（如 `1.json`），会自动从 `user/default/api_workflows/1.json` 读取。
 - 3. 传递 workflow 的 URL（如 `http://xxx/1.json`），会自动下载并解析。
 
 区分方式：
@@ -165,7 +198,7 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 {"workflow": {"node1": {...}, ...}}
 
 // 2. 传本地文件名
-// 1.json 对应的是 <ComfyUI根目录>/user/default/workflows/1.json
+// 1.json 对应的是 <ComfyUI根目录>/user/default/api_workflows/1.json
 {"workflow": "1.json"}
 
 // 3. 传 URL
