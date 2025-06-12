@@ -81,6 +81,8 @@ async def execute_workflow(request):
         - images_by_var: Mapped image URLs by variable name {var_name: [string, ...], ...}, only present if there are image results
         - videos: List of video URLs [string, ...], only present if there are video results
         - videos_by_var: Mapped video URLs by variable name {var_name: [string, ...], ...}, only present if there are video results
+        - audios: List of audio URLs [string, ...], only present if there are audio results
+        - audios_by_var: Mapped audio URLs by variable name {var_name: [string, ...], ...}, only present if there are audio results
         - texts: List of text outputs [string, ...], only present if there are text results
         - texts_by_var: Mapped text outputs by variable name {var_name: [string, ...], ...}, only present if there are text results
     
@@ -89,8 +91,8 @@ async def execute_workflow(request):
     - Output: Use "$output.name" in output node title to specify outputs
       - "$output.name" - Marks an output node with a custom output name (added to "images_by_var[name]" or "videos_by_var[name]" or "texts_by_var[name]")
       - If no explicit output marker is set, the node_id is used as the variable name
-      - Any node that produces outputs (images, videos, texts) will be included in results
-      - images/images_by_var/videos/videos_by_var/texts/texts_by_var fields are only included if there are corresponding results
+      - Any node that produces outputs (images, videos, audios, texts) will be included in results
+      - images/images_by_var/videos/videos_by_var/audios/audios_by_var/texts/texts_by_var fields are only included if there are corresponding results
     """
     try:
         # Get request data
@@ -490,18 +492,20 @@ def _extend_flat_list_from_dict(media_dict):
 
 def _split_media_by_suffix(node_output, base_url):
     """
-    Split all media entries in node_output into images/videos by file extension.
+    Split all media entries in node_output into images/videos/audios by file extension.
     Args:
         node_output: Output dict for a node
         base_url: Base URL for constructing file URLs
     Returns:
-        (images: list, videos: list) - lists of URLs
+        (images: list, videos: list, audios: list) - lists of URLs
     """
     image_exts = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff'}
     video_exts = {'.mp4', '.mov', '.avi', '.webm', '.gif'}
+    audio_exts = {'.mp3', '.wav', '.flac', '.ogg', '.aac', '.m4a', '.wma', '.opus'}
     images = []
     videos = []
-    for media_key in ("images", "gifs"):
+    audios = []
+    for media_key in ("images", "gifs", "audio"):
         for media_data in node_output.get(media_key, []):
             filename = media_data.get("filename")
             subfolder = media_data.get("subfolder", "")
@@ -516,7 +520,9 @@ def _split_media_by_suffix(node_output, base_url):
                 images.append(url)
             elif ext in video_exts:
                 videos.append(url)
-    return images, videos
+            elif ext in audio_exts:
+                audios.append(url)
+    return images, videos, audios
 
 async def _wait_for_results(prompt_id, timeout=None, request=None, output_id_2_var=None):
     """Wait for workflow execution results, get history using HTTP API"""
@@ -528,6 +534,8 @@ async def _wait_for_results(prompt_id, timeout=None, request=None, output_id_2_v
         "images_by_var": {},
         "videos": [],
         "videos_by_var": {},
+        "audios": [],
+        "audios_by_var": {},
         "texts": [],
         "texts_by_var": {}
     }
@@ -552,21 +560,41 @@ async def _wait_for_results(prompt_id, timeout=None, request=None, output_id_2_v
                     if prompt_id not in history_data:
                         await asyncio.sleep(1.0)
                         continue
+                    
                     prompt_history = history_data[prompt_id]
+                    status = prompt_history.get("status")
+                    if status and status.get("status_str") == "error":
+                        result["status"] = "error"
+                        messages = status.get("messages")
+                        if messages:
+                            errors = [
+                                body.get("exception_message")
+                                for type, body in messages
+                                if type == "execution_error"
+                            ]
+                            error_message = "\n".join(errors)
+                        else:
+                            error_message = "Unknown error"
+                        result["error"] = error_message
+                        return result
+                    
                     if "outputs" in prompt_history:
                         result["outputs"] = prompt_history["outputs"]
                         result["status"] = "completed"
 
-                        # Collect all image and video outputs by file extension
+                        # Collect all image, video, audio and text outputs by file extension
                         output_id_2_images = {}
                         output_id_2_videos = {}
+                        output_id_2_audios = {}
                         output_id_2_texts = {}
                         for node_id, node_output in prompt_history["outputs"].items():
-                            images, videos = _split_media_by_suffix(node_output, base_url)
+                            images, videos, audios = _split_media_by_suffix(node_output, base_url)
                             if images:
                                 output_id_2_images[node_id] = images
                             if videos:
                                 output_id_2_videos[node_id] = videos
+                            if audios:
+                                output_id_2_audios[node_id] = audios
                             # Collect text outputs
                             if "text" in node_output:
                                 # Handle text field as string or list
@@ -586,12 +614,16 @@ async def _wait_for_results(prompt_id, timeout=None, request=None, output_id_2_v
                             result["videos_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_videos)
                             result["videos"] = _extend_flat_list_from_dict(result["videos_by_var"])
 
+                        if output_id_2_audios:
+                            result["audios_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_audios)
+                            result["audios"] = _extend_flat_list_from_dict(result["audios_by_var"])
+
                         # Handle texts/texts_by_var
                         if output_id_2_texts:
                             result["texts_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_texts)
                             result["texts"] = _extend_flat_list_from_dict(result["texts_by_var"])
 
-                        # Remove empty fields for images/videos/texts
+                        # Remove empty fields for images/videos/audios/texts
                         if not result.get("images"):
                             result.pop("images", None)
                         if not result.get("images_by_var"):
@@ -600,6 +632,10 @@ async def _wait_for_results(prompt_id, timeout=None, request=None, output_id_2_v
                             result.pop("videos", None)
                         if not result.get("videos_by_var"):
                             result.pop("videos_by_var", None)
+                        if not result.get("audios"):
+                            result.pop("audios", None)
+                        if not result.get("audios_by_var"):
+                            result.pop("audios_by_var", None)
                         if not result.get("texts"):
                             result.pop("texts", None)
                         if not result.get("texts_by_var"):
