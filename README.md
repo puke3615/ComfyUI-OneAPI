@@ -15,7 +15,7 @@ ComfyUI-OneAPI is a plugin that provides simple REST API interfaces for ComfyUI,
    ```
 3. Clone this repository:
    ```bash
-   git clone https://github.com/puke/ComfyUI-OneAPI.git
+   git clone https://github.com/puke3615/ComfyUI-OneAPI.git
    ```
 4. Restart ComfyUI
 

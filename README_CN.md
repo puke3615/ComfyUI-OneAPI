@@ -15,7 +15,7 @@ ComfyUI-OneAPI 是一个为 ComfyUI 提供简单REST API接口的插件，只需
    ```
 3. 克隆此仓库：
    ```bash
-   git clone https://github.com/puke/ComfyUI-OneAPI.git
+   git clone https://github.com/puke3615/ComfyUI-OneAPI.git
    ```
 4. 重启ComfyUI
 
