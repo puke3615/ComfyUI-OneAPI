@@ -1,7 +1,7 @@
 [project]
 name = "ComfyUI-OneAPI"
 description = "Simple REST API interfaces for ComfyUI with dynamic parameter replacement and output management"
-version = "1.0.0"
+version = "1.0.1"
 license = { file = "LICENSE" }
 dependencies = []
 
