@@ -4,6 +4,26 @@ ComfyUI-OneAPI is a plugin that provides simple REST API interfaces for ComfyUI,
 
 [中文文档](README_CN.md)
 
+## 🎯 Why ComfyUI-OneAPI?
+
+![ComfyUI-OneAPI Comparison](docs/compare.png)
+
+### ✨ Core Features
+- **Extreme Simplicity** - Execute complex ComfyUI workflows with just ONE API request
+- **Dynamic Parameters** - Replace workflow parameters dynamically through node title markers
+- **Multi-Source Support** - Support JSON objects, local files, and URLs as workflow inputs
+- **Smart Output Management** - Automatically categorize and organize multiple output nodes
+- **UI Integration** - Built-in right-click menus for workflow saving and parameter setting
+- **Flexible Marking System** - Support input markers (`$param.field`) and output markers (`$output.name`)
+
+### 🚀 Core Advantages
+- **95% Code Reduction** - From hundreds of lines of complex logic to a single API call
+- **Unified Error Handling** - Built-in comprehensive exception handling and error recovery
+- **Parameterized Workflows** - Dynamic parameter replacement through node title markers
+- **Intelligent File Processing** - Auto-handle image uploads, URL downloads, temp file management
+- **Auto-categorized Results** - Smart classification of different output types
+- **Zero Learning Curve** - Keep ComfyUI workflows unchanged, just add simple markers
+
 ## ⚡️ Quick Start
 
 ### 📦 Installation
