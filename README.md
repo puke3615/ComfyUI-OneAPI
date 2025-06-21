@@ -6,6 +6,19 @@ ComfyUI-OneAPI is a plugin that provides simple REST API interfaces for ComfyUI,
 
 ## ⚡️ Quick Start
 
+### 📦 Installation
+
+1. Open terminal/command line
+2. Navigate to ComfyUI's custom_nodes directory:
+   ```bash
+   cd ComfyUI/custom_nodes
+   ```
+3. Clone this repository:
+   ```bash
+   git clone https://github.com/puke/ComfyUI-OneAPI.git
+   ```
+4. Restart ComfyUI
+
 ### 🚀 Execute Workflow with Just One Request
 
 ```bash
@@ -74,11 +87,6 @@ When your workflow has multiple SaveImage nodes, easily distinguish different ou
 - 💾 Add `$output.background` or `$output.character` to SaveImage node titles
 
 ## 📋 Advanced Features
-
-### 📦 Installation
-
-1. Download or clone this repository to the `custom_nodes` directory of ComfyUI
-2. Restart ComfyUI
 
 ### 🖥️ UI Features
 

@@ -6,6 +6,19 @@ ComfyUI-OneAPI 是一个为 ComfyUI 提供简单REST API接口的插件，只需
 
 ## ⚡️ 快速开始
 
+### 📦 安装
+
+1. 打开终端/命令行
+2. 切换到ComfyUI的custom_nodes目录：
+   ```bash
+   cd ComfyUI/custom_nodes
+   ```
+3. 克隆此仓库：
+   ```bash
+   git clone https://github.com/puke/ComfyUI-OneAPI.git
+   ```
+4. 重启ComfyUI
+
 ### 🚀 仅需一个请求即可执行工作流
 
 ```bash
@@ -74,11 +87,6 @@ curl -X POST "http://localhost:8188/oneapi/v1/execute" \
 - 💾 在SaveImage节点标题添加 `$output.background` 或 `$output.character`
 
 ## 📋 高级功能
-
-### 📦 安装
-
-1. 下载或克隆此仓库到ComfyUI的`custom_nodes`目录
-2. 重启ComfyUI
 
 ### 🖥️ 界面功能
 
