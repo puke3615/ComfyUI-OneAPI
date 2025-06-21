@@ -1,0 +1,18 @@
+[project]
+name = "ComfyUI-OneAPI"
+description = "Simple REST API interfaces for ComfyUI with dynamic parameter replacement and output management"
+version = "1.0.0"
+license = { file = "LICENSE" }
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/puke3615/ComfyUI-OneAPI"
+
+[tool.comfy]
+PublisherId = "puke3615"
+DisplayName = "ComfyUI-OneAPI"
+Icon = ""
+
+[tool.comfy.author]
+name = "puke3615"
+url = "https://github.com/puke3615" 
