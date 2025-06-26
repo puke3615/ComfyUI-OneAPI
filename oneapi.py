@@ -18,6 +18,13 @@ from workflow_format import adjust_workflow_format
 # Constants
 API_WORKFLOWS_DIR = 'api_workflows'
 
+# Node types that require special media upload handling
+MEDIA_UPLOAD_NODE_TYPES = {
+    'LoadImage',
+    'VHS_LoadAudioUpload',
+    'VHS_LoadVideo',
+}
+
 # Get routes
 prompt_server = PromptServer.instance
 routes = prompt_server.routes
@@ -256,7 +263,7 @@ async def _process_param_marker(node_data, var_spec, params):
     - param_name: Parameter name, corresponding to key in params
     - field_name: Node input field name
     
-    Special handling for LoadImage node's image field
+    Special handling for media upload node types defined in MEDIA_UPLOAD_NODE_TYPES
     """
     # Must have field separator
     if '.' not in var_spec:
@@ -273,40 +280,42 @@ async def _process_param_marker(node_data, var_spec, params):
     # Get parameter value
     param_value = params[var_name]
     
-    # Special handling for LoadImage node's image field
-    if node_data.get('class_type') == 'LoadImage':
-        await _handle_load_image(node_data, param_value)
+    # Check if this node type requires special media upload handling
+    node_class_type = node_data.get('class_type')
+    if node_class_type in MEDIA_UPLOAD_NODE_TYPES:
+        await _handle_media_upload(node_data, input_field, param_value)
     else:
         # Regular parameter setting
         await _set_node_param(node_data, input_field, param_value)
 
-async def _handle_load_image(node_data, image_path_or_url):
+async def _handle_media_upload(node_data, input_field, param_value):
     """
-    Handle LoadImage node's image parameter
+    Handle media upload for nodes in MEDIA_UPLOAD_NODE_TYPES
     
     Args:
         node_data: Node data
-        image_path_or_url: Image path or URL
+        input_field: Input field name
+        param_value: Parameter value
     """
     # Ensure inputs exists
     if "inputs" not in node_data:
         node_data["inputs"] = {}
     
-    # If parameter value is a URL starting with http, upload the image first
-    if isinstance(image_path_or_url, str) and image_path_or_url.startswith(('http://', 'https://')):
+    # If parameter value is a URL starting with http, upload the media first
+    if isinstance(param_value, str) and param_value.startswith(('http://', 'https://')):
         try:
-            # Upload image and get uploaded image name
-            image_value = await _upload_image_from_source(image_path_or_url)
-            # Use uploaded image name as LoadImage node's image value
-            await _set_node_param(node_data, "image", image_value)
-            print(f"Image uploaded: {image_value}")
+            # Upload media and get uploaded media name
+            media_value = await _upload_media_from_source(param_value)
+            # Use uploaded media name as node's input value
+            await _set_node_param(node_data, input_field, media_value)
+            print(f"Media uploaded: {media_value}")
         except Exception as e:
-            print(f"Failed to upload image: {str(e)}")
+            print(f"Failed to upload media: {str(e)}")
             # Throw exception on upload failure
-            raise Exception(f"Image upload failed: {str(e)}")
+            raise Exception(f"Media upload failed: {str(e)}")
     else:
-        # Use parameter value directly as image name
-        await _set_node_param(node_data, "image", image_path_or_url)
+        # Use parameter value directly as media name
+        await _set_node_param(node_data, input_field, param_value)
 
 async def _set_node_param(node_data, input_field, param_value):
     """
@@ -323,60 +332,60 @@ async def _set_node_param(node_data, input_field, param_value):
     # Set parameter value
     node_data["inputs"][input_field] = param_value
 
-async def _upload_image_from_source(image_url) -> str:
+async def _upload_media_from_source(media_url) -> str:
     """
-    Upload image from URL
+    Upload media from URL
     
     Args:
-        image_url: Image URL
+        media_url: Media URL
             
     Returns:
-        Upload image file name
+        Upload media file name
     """
-    # Download image from URL
+    # Download media from URL
     async with aiohttp.ClientSession() as session:
-        async with session.get(image_url) as response:
+        async with session.get(media_url) as response:
             if response.status != 200:
-                raise Exception(f"Failed to download image: HTTP {response.status}")
+                raise Exception(f"Failed to download media: HTTP {response.status}")
             
             # Extract filename from URL
-            parsed_url = urlparse(image_url)
+            parsed_url = urlparse(media_url)
             filename = os.path.basename(parsed_url.path)
             if not filename:
-                filename = f"temp_image_{hash(image_url)}.jpg"
+                filename = f"temp_media_{hash(media_url)}.jpg"
             
-            # Get image data
-            image_data = await response.read()
+            # Get media data
+            media_data = await response.read()
             
             # Save to temporary file
             suffix = os.path.splitext(filename)[1] or ".jpg"
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                tmp.write(image_data)
+                tmp.write(media_data)
                 temp_path = tmp.name
     
     try:
         # Upload temporary file to ComfyUI
-        return await _upload_image(temp_path)
+        return await _upload_media(temp_path)
     finally:
         # Delete temporary file
         os.unlink(temp_path)
 
-async def _upload_image(image_path) -> str:
+async def _upload_media(media_path) -> str:
     """
-    Upload image to ComfyUI
+    Upload media to ComfyUI
     
     Args:
-        image_path: Image path
+        media_path: Media path
             
     Returns:
-        Upload image file name
+        Upload media file name
     """
-    # Read image data
-    with open(image_path, 'rb') as f:
-        image_data = f.read()
+    # Read media data
+    with open(media_path, 'rb') as f:
+        media_data = f.read()
     
     # Extract filename
-    filename = os.path.basename(image_path)
+    filename = os.path.basename(media_path)
     
     # Auto-detect file MIME type
     mime_type = mimetypes.guess_type(filename)[0]
@@ -386,15 +395,15 @@ async def _upload_image(image_path) -> str:
     
     # Prepare form data
     data = aiohttp.FormData()
-    data.add_field('image', image_data, 
+    data.add_field('image', media_data, 
                    filename=filename, 
                    content_type=mime_type)
     
-    # Upload image (internal ComfyUI API call still uses 127.0.0.1)
+    # Upload media (internal ComfyUI API call still uses 127.0.0.1)
     async with aiohttp.ClientSession() as session:
         async with session.post("http://127.0.0.1:8188/upload/image", data=data) as response:
             if response.status != 200:
-                raise Exception(f"Failed to upload image: HTTP {response.status}")
+                raise Exception(f"Failed to upload media: HTTP {response.status}")
             
             # Get upload result
             result = await response.json()
