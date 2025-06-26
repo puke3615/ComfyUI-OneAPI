@@ -437,6 +437,7 @@ async def _queue_prompt(workflow, client_id, prompt_ext_params=None):
             prompt_id = result.get("prompt_id")
             if not prompt_id:
                 raise Exception(f"Failed to get prompt_id: {result}")
+            print(f"Task submitted: {prompt_id}")
             return prompt_id
 
 async def _get_base_url(request):
@@ -554,14 +555,18 @@ async def _wait_for_results(prompt_id, timeout=None, request=None, output_id_2_v
 
     while True:
         # Check timeout
-        if timeout is not None and timeout > 0 and (time.time() - start_time) > timeout:
-            result["status"] = "timeout"
-            return result
+        if timeout is not None and timeout > 0:
+            duration = time.time() - start_time
+            if duration > timeout:
+                print(f"Timeout: {duration} seconds")
+                result["duration"] = duration
+                result["status"] = "timeout"
+                return result
 
         # Get history using HTTP API
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"http://127.0.0.1:8188/history") as response:
+                async with session.get(f"http://127.0.0.1:8188/history/{prompt_id}") as response:
                     if response.status != 200:
                         await asyncio.sleep(1.0)
                         continue
