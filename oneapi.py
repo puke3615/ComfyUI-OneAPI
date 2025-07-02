@@ -564,100 +564,97 @@ async def _wait_for_results(prompt_id, timeout=None, request=None, output_id_2_v
                 return result
 
         # Get history using HTTP API
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"http://127.0.0.1:8188/history/{prompt_id}") as response:
-                    if response.status != 200:
-                        await asyncio.sleep(1.0)
-                        continue
-                    history_data = await response.json()
-                    if prompt_id not in history_data:
-                        await asyncio.sleep(1.0)
-                        continue
-                    
-                    prompt_history = history_data[prompt_id]
-                    status = prompt_history.get("status")
-                    if status and status.get("status_str") == "error":
-                        result["status"] = "error"
-                        messages = status.get("messages")
-                        if messages:
-                            errors = [
-                                body.get("exception_message")
-                                for type, body in messages
-                                if type == "execution_error"
-                            ]
-                            error_message = "\n".join(errors)
-                        else:
-                            error_message = "Unknown error"
-                        result["error"] = error_message
-                        return result
-                    
-                    if "outputs" in prompt_history:
-                        result["outputs"] = prompt_history["outputs"]
-                        result["status"] = "completed"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://127.0.0.1:8188/history/{prompt_id}") as response:
+                if response.status != 200:
+                    await asyncio.sleep(1.0)
+                    continue
+                history_data = await response.json()
+                if prompt_id not in history_data:
+                    await asyncio.sleep(1.0)
+                    continue
+                
+                prompt_history = history_data[prompt_id]
+                status = prompt_history.get("status")
+                if status and status.get("status_str") == "error":
+                    result["status"] = "error"
+                    messages = status.get("messages")
+                    if messages:
+                        errors = [
+                            body.get("exception_message")
+                            for type, body in messages
+                            if type == "execution_error"
+                        ]
+                        error_message = "\n".join(errors)
+                    else:
+                        error_message = "Unknown error"
+                    result["error"] = error_message
+                    return result
+                
+                if "outputs" in prompt_history:
+                    result["outputs"] = prompt_history["outputs"]
+                    result["status"] = "completed"
 
-                        # Collect all image, video, audio and text outputs by file extension
-                        output_id_2_images = {}
-                        output_id_2_videos = {}
-                        output_id_2_audios = {}
-                        output_id_2_texts = {}
-                        for node_id, node_output in prompt_history["outputs"].items():
-                            images, videos, audios = _split_media_by_suffix(node_output, base_url)
-                            if images:
-                                output_id_2_images[node_id] = images
-                            if videos:
-                                output_id_2_videos[node_id] = videos
-                            if audios:
-                                output_id_2_audios[node_id] = audios
-                            # Collect text outputs
-                            if "text" in node_output:
-                                # Handle text field as string or list
-                                texts = node_output["text"]
-                                if isinstance(texts, str):
-                                    texts = [texts]
-                                elif not isinstance(texts, list):
-                                    texts = [str(texts)]
-                                output_id_2_texts[node_id] = texts
+                    # Collect all image, video, audio and text outputs by file extension
+                    output_id_2_images = {}
+                    output_id_2_videos = {}
+                    output_id_2_audios = {}
+                    output_id_2_texts = {}
+                    for node_id, node_output in prompt_history["outputs"].items():
+                        images, videos, audios = _split_media_by_suffix(node_output, base_url)
+                        if images:
+                            output_id_2_images[node_id] = images
+                        if videos:
+                            output_id_2_videos[node_id] = videos
+                        if audios:
+                            output_id_2_audios[node_id] = audios
+                        # Collect text outputs
+                        if "text" in node_output:
+                            # Handle text field as string or list
+                            texts = node_output["text"]
+                            if isinstance(texts, str):
+                                texts = [texts]
+                            elif not isinstance(texts, list):
+                                texts = [str(texts)]
+                            output_id_2_texts[node_id] = texts
 
-                        # Map by variable name if mapping is available
-                        if output_id_2_images:
-                            result["images_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_images)
-                            result["images"] = _extend_flat_list_from_dict(result["images_by_var"])
+                    # Map by variable name if mapping is available
+                    if output_id_2_images:
+                        result["images_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_images)
+                        result["images"] = _extend_flat_list_from_dict(result["images_by_var"])
 
-                        if output_id_2_videos:
-                            result["videos_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_videos)
-                            result["videos"] = _extend_flat_list_from_dict(result["videos_by_var"])
+                    if output_id_2_videos:
+                        result["videos_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_videos)
+                        result["videos"] = _extend_flat_list_from_dict(result["videos_by_var"])
 
-                        if output_id_2_audios:
-                            result["audios_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_audios)
-                            result["audios"] = _extend_flat_list_from_dict(result["audios_by_var"])
+                    if output_id_2_audios:
+                        result["audios_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_audios)
+                        result["audios"] = _extend_flat_list_from_dict(result["audios_by_var"])
 
-                        # Handle texts/texts_by_var
-                        if output_id_2_texts:
-                            result["texts_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_texts)
-                            result["texts"] = _extend_flat_list_from_dict(result["texts_by_var"])
+                    # Handle texts/texts_by_var
+                    if output_id_2_texts:
+                        result["texts_by_var"] = _map_outputs_by_var(output_id_2_var, output_id_2_texts)
+                        result["texts"] = _extend_flat_list_from_dict(result["texts_by_var"])
 
-                        # Remove empty fields for images/videos/audios/texts
-                        if not result.get("images"):
-                            result.pop("images", None)
-                        if not result.get("images_by_var"):
-                            result.pop("images_by_var", None)
-                        if not result.get("videos"):
-                            result.pop("videos", None)
-                        if not result.get("videos_by_var"):
-                            result.pop("videos_by_var", None)
-                        if not result.get("audios"):
-                            result.pop("audios", None)
-                        if not result.get("audios_by_var"):
-                            result.pop("audios_by_var", None)
-                        if not result.get("texts"):
-                            result.pop("texts", None)
-                        if not result.get("texts_by_var"):
-                            result.pop("texts_by_var", None)
+                    # Remove empty fields for images/videos/audios/texts
+                    if not result.get("images"):
+                        result.pop("images", None)
+                    if not result.get("images_by_var"):
+                        result.pop("images_by_var", None)
+                    if not result.get("videos"):
+                        result.pop("videos", None)
+                    if not result.get("videos_by_var"):
+                        result.pop("videos_by_var", None)
+                    if not result.get("audios"):
+                        result.pop("audios", None)
+                    if not result.get("audios_by_var"):
+                        result.pop("audios_by_var", None)
+                    if not result.get("texts"):
+                        result.pop("texts", None)
+                    if not result.get("texts_by_var"):
+                        result.pop("texts_by_var", None)
 
-                        return result
-        except Exception as e:
-            print(f"Error getting history: {str(e)}")
+                    return result
         await asyncio.sleep(1.0)
 
 # New: Load workflow from local file
