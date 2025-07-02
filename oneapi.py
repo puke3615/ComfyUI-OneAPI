@@ -1,6 +1,7 @@
 import os
 import json
 import traceback
+from typing import Sequence
 import uuid
 import time
 import copy
@@ -517,11 +518,17 @@ def _split_media_by_suffix(node_output, base_url):
     audios = []
     for media_key in ("images", "gifs", "audio"):
         for media_data in node_output.get(media_key, []):
-            if not isinstance(media_data, dict):
+            if (isinstance(media_data, list) or isinstance(media_data, tuple)) and len(media_data) == 2:
+                subfolder = ""
+                filename, media_type = media_data
+            elif isinstance(media_data, dict):
+                filename = media_data.get("filename")
+                subfolder = media_data.get("subfolder", "")
+                media_type = media_data.get("type", "output")
+            else:
+                print(f"Invalid media data: {media_key} | {media_data}")
                 continue
-            filename = media_data.get("filename")
-            subfolder = media_data.get("subfolder", "")
-            media_type = media_data.get("type", "output")
+            
             url = f"{base_url}/view?filename={filename}"
             if subfolder:
                 url += f"&subfolder={subfolder}"
