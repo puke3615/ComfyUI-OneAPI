@@ -517,6 +517,8 @@ def _split_media_by_suffix(node_output, base_url):
     audios = []
     for media_key in ("images", "gifs", "audio"):
         for media_data in node_output.get(media_key, []):
+            if not isinstance(media_data, dict):
+                continue
             filename = media_data.get("filename")
             subfolder = media_data.get("subfolder", "")
             media_type = media_data.get("type", "output")
